@@ -118,10 +118,31 @@ local function saveResCache(url, res, expires)
 end
 
 local function getResCache(url)
-	local gzipStr = cache.get_from_cache("responseCache", url)
-	if gzipStr then
-		local res = tableSerialize.unserialize(gzipStr)
+	local str = cache.get_from_cache("responseCache", url)
+	if str then
+		local res = tableSerialize.unserialize(str)
 		return res
+	else
+		return nil
+	end
+end
+
+local function getIp(host)
+	if dns.needResolve(host) then
+		ip = cache.get_from_cache("myDnsCache", host)
+		if not ip then
+			ip = dns.resolve(host)
+			if not ip then
+				ngx.log(ngx.ERR, "refresh DNS cache failed host:", host) 
+				ngx.print("fail to resolve host:", host)
+				ngx.exit(444)
+			else
+				cache.set_to_cache("myDnsCache", host, ip, 300)
+				return ip
+			end
+		else
+			return ip
+		end
 	else
 		return nil
 	end
@@ -178,22 +199,8 @@ if resStatusCache then
 	end
 	ngx.eof()
 else
-	local ip
-	ngx.log(ngx.ERR, "get_from_request:url:", url)
-	if dns.needResolve(host) then
-		ip = cache.get_from_cache("myDnsCache", host)
-		if not ip then
-			ip = dns.resolve(host)
-			if not ip then
-				ngx.log(ngx.ERR, "refresh DNS cache failed host:", host) 
-				ngx.print("fail to resolve host:", host)
-				return 
-			else
-				cache.set_to_cache("myDnsCache", host, ip, 300)
-			end
-		end
-	end
-	ngx.log(ngx.ERR, "ip:", ip, " host:", host)
+	local ip = getIp(host)
+	ngx.log(ngx.ERR, "get_from_request:url:", url, " ip:", ip, " host:", host)
 	local httpc = http.new()
 	httpc:set_timeout(20000) -- 20s
 	local res, err = httpc:request_uri_by_ip(ip, url, reqParams)

@@ -1,45 +1,27 @@
 local server = require "resty.websocket.server"
 local client = require "lualib.websocket.client"
-local dns = require "lualib.dns.resolver"
--- local dump = require "lualib.dump"
+local dns = require "lualib.dns.myresolver"
+local cache = require "lualib.cache"
 
-local config = {
-	-- ["prod-live-front.playbattlegrounds.com"] = "13.35.121.71",
-	-- ["j9t5h48n24.execute-api.us-west-2.amazonaws.com"] = "13.33.231.73",
-	-- ["prod-live-entry.playbattlegrounds.com"] = "52.45.250.114",
-	-- ["d1wfiv6sf8d64f.cloudfront.net"] = "13.33.227.159",
-}
-
-local dnsc, err = dns:new({
-	nameservers = {"8.8.8.8", {"8.8.4.4", 53} },
-	retrans = 5,  -- 5 retransmissions on receive timeout
-	timeout = 2000,  -- 2 sec
-})
-
-local function dns_resolver(host)
-	local ip = config[host]
-	if not ip then
-		if not dnsc then
-			return nil, "fail to resolve host " .. host
-		end
-
-		local answers, err, tries = dnsc:query(host, nil, {})
-		if not answers then
-			return nil, "failed to query the DNS server: " .. err .. "\nretry historie:\n " .. table.concat(tries, "\n  ")
-		end
-
-		if answers.errcode then
-			return nil, "server returned error code: " .. answers.errcode .. ": " .. answers.errstr
-		end
-
-		for i, ans in ipairs(answers) do
-			if ans.type == 1 and ans.class == 1 then
-				return ans.address
+local function getIp(host)
+	if dns.needResolve(host) then
+		ip = cache.get_from_cache("myDnsCache", host)
+		if not ip then
+			ip = dns.resolve(host)
+			if not ip then
+				ngx.log(ngx.ERR, "refresh DNS cache failed host:", host) 
+				ngx.print("fail to resolve host:", host)
+				ngx.exit(444)
+			else
+				cache.set_to_cache("myDnsCache", host, ip, 300)
+				return ip
 			end
-        end
-    else
-        return ip
-	end	
+		else
+			return ip
+		end
+	else
+		return host
+	end
 end
 
 local wb, err = server:new({
@@ -57,10 +39,7 @@ local uri = "ws" .. headers.origin:sub(5) .. ngx.var.request_uri
 -- ngx.log(ngx.ERR, 'uri ', uri)
 
 local ip, err = dns_resolver(ngx.var.host)
-if not ip then
-    ngx.log(ngx.ERR, "dns_resolver ", ngx.var.host, " fail: ", err)
-	return ngx.exit(444)
-end
+local ip = getIp(ngx.var.host)
 
 local wbc, err = client:new({
     timeout = 5000,  -- in milliseconds
@@ -72,9 +51,8 @@ local ok, err = wbc:connect_by_ip(ip, uri, {
 if not ok then
     ngx.log(ngx.ERR, "connect_by_ip fail ", ip, " err ", err)
     return ngx.exit(444)
-else
-    -- ngx.log(ngx.ERR, "connect_by_ip ok ", ip, ", uri ", uri)
 end
+
 
 while true do
     -- 接受客户端发来的请求
