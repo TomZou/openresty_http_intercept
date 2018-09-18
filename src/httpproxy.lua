@@ -134,7 +134,6 @@ local function getIp(host)
 			ip = dns.resolve(host)
 			if not ip then
 				ngx.log(ngx.ERR, "refresh DNS cache failed host:", host) 
-				ngx.print("fail to resolve host:", host)
 				ngx.exit(444)
 			else
 				cache.set_to_cache("myDnsCache", host, ip, 300)
@@ -144,7 +143,7 @@ local function getIp(host)
 			return ip
 		end
 	else
-		return nil
+		ngx.exit(444)
 	end
 end
 

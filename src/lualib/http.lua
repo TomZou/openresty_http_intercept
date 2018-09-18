@@ -939,6 +939,7 @@ function _M.request_uri_by_ip(self, ip, uri, params)
     if proxy_uri then
         c, err = self:connect_proxy(proxy_uri, scheme, host, port)
     else
+
         c, err = self:connect(ip or host, port)
     end
 
@@ -992,7 +993,6 @@ function _M.request_uri_by_ip(self, ip, uri, params)
         end
 
     end
-
     local res, err = self:request(params)
     if not res then
         self:close()
