@@ -7,6 +7,7 @@ local stringUtils = require "lualib.stringUtils"
 --1.完全匹配响应里面http头部给出的cache条件
 --2.只缓存静态文件,403,404请求不缓存
 --3.一个request分成几个key去存 例如：request-header， request-body，request-status
+
 local needCacheType = {
 	'image/', "audio/", "video/", "text/", 
 }
@@ -77,28 +78,30 @@ local function saveCacheCondition(res)
 	end	
 
 	if headers['Cache-Control'] then
-		if headers['Cache-Control'] == 'no-cache'  then 
+		local cache_control = headers['Cache-Control']
+		ngx.log(ngx.ERR, cache_control)
+		if cache_control == 'no-cache'  then 
 			return false 
-		elseif string.find(headers['Cache-Control'], "max-age") then
+		elseif string.find(cache_control, "max") then
 			local expireTime = 0
-			local tab = stringUtils.split(headers['Cache-Control'], ",")
+			local tab = stringUtils.split(cache_control, ",")
 			for _, v in ipairs(tab) do
-				if string.find(v, "max-age") then
+				if string.find(v, "max") then
 					local tab2 = stringUtils.split(v, "=")
 					expireTime = tonumber(tab2[2])
+					ngx.log(ngx.ERR, "max-age:", expireTime)
 					return true, expireTime
 				end
 			end		
 		end
-	end
-
-	if headers['Expires'] then
+	elseif headers['Expires'] then
 		if headers['Expires'] == -1 then 
 			return false
 		else  
 			local day, month, year, hour, minute, second = transferGMTDate(headers["Expires"])
 			local expireTime = os.time({day = day, month = month, year = year, hour = hour, minute = minute, second = second}) - os.time()
-			return true, expireTime
+			ngx.log(ngx.ERR, "expires:", headers["Expires"])
+			return true, expireTime > 0 and expireTime or 600
 		end
 	end
 
